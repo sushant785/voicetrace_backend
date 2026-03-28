@@ -1,6 +1,7 @@
-import { updateDailyRecord } from "../services/daily.service.js";
+import { updateDailyRecord } from "../services/daily.services.js";
 
 export const triggerDailyUpdate = async (req, res) => {
+  console.log("🔥 /update-daily HIT", req.body);
   try {
     const { vendorId, date } = req.body;
 
