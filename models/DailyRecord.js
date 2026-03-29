@@ -21,7 +21,7 @@ const DailyRecordSchema = new Schema({
 
   expenses: [
     {
-      type: String,
+      type: { type: String },
       total: Number
     }
   ],
@@ -60,7 +60,7 @@ const DailyRecordSchema = new Schema({
 
   suggestions: [
     {
-      type: String,
+      type: { type: String },
       message: String,
       priority: {
         type: String,

@@ -10,4 +10,6 @@ const connectDB = async () => {
   }
 };
 
+export const get_db = () => mongoose.connection.db;
+
 export default connectDB;

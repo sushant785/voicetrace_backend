@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import PDFDocument from "pdfkit";
 import { DailyRecord } from "../models/DailyRecord.js";
 
 const router = express.Router();
@@ -34,6 +35,181 @@ const findItemIndex = (items, itemName) => {
   const target = itemName.trim().toLowerCase();
   return items.findIndex((i) => (i.item || "").trim().toLowerCase() === target);
 };
+
+const formatCurrency = (value) => `INR ${Number(value || 0).toFixed(2)}`;
+
+const formatDate = (value) => new Date(value).toLocaleDateString("en-IN", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+router.get("/weekly-summary/pdf", async (req, res) => {
+  try {
+    const vendorId = (req.query.vendorId || "").toString().trim();
+    const weekStartRaw = (req.query.weekStart || "").toString().trim();
+
+    if (!vendorId || !mongoose.Types.ObjectId.isValid(vendorId)) {
+      return res.status(400).json({ message: "Valid vendorId query param is required" });
+    }
+
+    if (!weekStartRaw) {
+      return res.status(400).json({ message: "weekStart query param is required (YYYY-MM-DD)" });
+    }
+
+    const weekStart = new Date(weekStartRaw);
+    if (Number.isNaN(weekStart.getTime())) {
+      return res.status(400).json({ message: "Invalid weekStart date" });
+    }
+
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const records = await DailyRecord.find({
+      vendorId,
+      date: { $gte: weekStart, $lte: weekEnd },
+    }).sort({ date: 1 });
+
+    if (!records.length) {
+      return res.status(404).json({
+        message: "No DailyRecord data found for the selected week",
+        vendorId,
+        weekStart,
+        weekEnd,
+      });
+    }
+
+    const summary = {
+      totalIncome: 0,
+      totalExpense: 0,
+      totalProfit: 0,
+      totalTransactions: 0,
+      udharGiven: 0,
+      udharReceived: 0,
+      wastedEstimatedLoss: 0,
+      activeDays: records.length,
+    };
+
+    const itemMap = {};
+    const expenseMap = {};
+
+    records.forEach((record) => {
+      summary.totalIncome += Number(record.calculatedIncome || 0);
+      summary.totalExpense += Number(record.totalExpense || 0);
+      summary.totalProfit += Number(record.profit || 0);
+      summary.totalTransactions += Number(record.totalTransactions || 0);
+      summary.udharGiven += Number(record.udharSummary?.givenToday || 0);
+      summary.udharReceived += Number(record.udharSummary?.receivedToday || 0);
+
+      (record.itemsSold || []).forEach((line) => {
+        const key = (line.item || "Unknown").trim() || "Unknown";
+        if (!itemMap[key]) {
+          itemMap[key] = { quantity: 0, total: 0 };
+        }
+        itemMap[key].quantity += Number(line.quantity || 0);
+        itemMap[key].total += Number(line.total || 0);
+      });
+
+      (record.expenses || []).forEach((line) => {
+        const key = (line.type || "other").trim() || "other";
+        if (!expenseMap[key]) {
+          expenseMap[key] = 0;
+        }
+        expenseMap[key] += Number(line.total || 0);
+      });
+
+      (record.wastedItems || []).forEach((line) => {
+        summary.wastedEstimatedLoss += Number(line.estimatedLoss || 0);
+      });
+    });
+
+    const topItems = Object.entries(itemMap)
+      .map(([item, data]) => ({ item, quantity: data.quantity, total: data.total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+
+    const expenseBreakdown = Object.entries(expenseMap)
+      .map(([type, total]) => ({ type, total }))
+      .sort((a, b) => b.total - a.total);
+
+    const fileDate = weekStartRaw.replace(/[^0-9-]/g, "");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=weekly-income-statement-${fileDate}.pdf`
+    );
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    doc.pipe(res);
+
+    doc.fontSize(18).text("Weekly Income Statement", { align: "left" });
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor("#444444").text("Informal proof of income generated from daily business entries");
+    doc.moveDown(0.6);
+    doc.fillColor("#000000");
+
+    doc.fontSize(11).text(`Vendor ID: ${vendorId}`);
+    doc.text(`Week Covered: ${formatDate(weekStart)} to ${formatDate(weekEnd)}`);
+    doc.text(`Generated On: ${formatDate(new Date())}`);
+    doc.moveDown(0.8);
+
+    doc.fontSize(13).text("Summary", { underline: true });
+    doc.moveDown(0.4);
+    doc.fontSize(11);
+    doc.text(`Total Income: ${formatCurrency(summary.totalIncome)}`);
+    doc.text(`Total Expense: ${formatCurrency(summary.totalExpense)}`);
+    doc.text(`Net Profit/Loss: ${formatCurrency(summary.totalProfit)}`);
+    doc.text(`Total Transactions: ${summary.totalTransactions}`);
+    doc.text(`Active Days with Entries: ${summary.activeDays}`);
+    doc.text(`Udhar Given: ${formatCurrency(summary.udharGiven)}`);
+    doc.text(`Udhar Received: ${formatCurrency(summary.udharReceived)}`);
+    doc.text(`Estimated Loss from Wastage: ${formatCurrency(summary.wastedEstimatedLoss)}`);
+    doc.moveDown(0.9);
+
+    doc.fontSize(13).text("Top Sold Items", { underline: true });
+    doc.moveDown(0.4);
+    doc.fontSize(11);
+    if (!topItems.length) {
+      doc.text("No sold item details available for this week.");
+    } else {
+      topItems.forEach((line, idx) => {
+        doc.text(`${idx + 1}. ${line.item} - Qty ${line.quantity}, Sales ${formatCurrency(line.total)}`);
+      });
+    }
+    doc.moveDown(0.9);
+
+    doc.fontSize(13).text("Expense Breakdown", { underline: true });
+    doc.moveDown(0.4);
+    doc.fontSize(11);
+    if (!expenseBreakdown.length) {
+      doc.text("No expense details available for this week.");
+    } else {
+      expenseBreakdown.forEach((line) => {
+        doc.text(`- ${line.type}: ${formatCurrency(line.total)}`);
+      });
+    }
+
+    doc.moveDown(1.1);
+    doc.fontSize(10).fillColor("#333333");
+    doc.text(
+      "Declaration: This statement is generated from daily records maintained by the vendor for regular business tracking. It is not an audited financial statement, but may be used as informal income proof where acceptable.",
+      { align: "left" }
+    );
+    doc.moveDown(1.5);
+    doc.fillColor("#000000").fontSize(10);
+    doc.text("Vendor Signature: ____________________");
+    doc.text("Contact Number: ______________________");
+
+    doc.end();
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to generate weekly summary PDF",
+      error: error.message,
+    });
+  }
+});
 
 router.post("/", async (req, res) => {
   try {

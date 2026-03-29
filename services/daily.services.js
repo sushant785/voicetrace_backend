@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { DailyRecord } from "../models/DailyRecord.js";
 import { SaleEvent } from "../models/SaleEvent.js";
 import { ExpenseEvent } from "../models/ExpenseEvent.js";
@@ -5,9 +6,11 @@ import { UdharEvent } from "../models/UdharEvent.js";
 
 export const updateDailyRecord = async (vendorId, date) => {
   const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
+  start.setUTCHours(0, 0, 0, 0);
   const end = new Date(date);
-  end.setHours(23, 59, 59, 999);
+  end.setUTCHours(23, 59, 59, 999);
+
+  const vendorObjectId = new mongoose.Types.ObjectId(vendorId);
 
   const sales = await SaleEvent.find({ vendorId, date: { $gte: start, $lte: end } });
   const expenses = await ExpenseEvent.find({ vendorId, date: { $gte: start, $lte: end } });

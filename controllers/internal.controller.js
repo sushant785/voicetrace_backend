@@ -1,7 +1,8 @@
 import { ExpenseEvent } from "../models/ExpenseEvent.js";
-import { updateDailyRecord } from "../services/daily.services.js";
+import { updateDailyRecord } from "../services/daily.servicess.js";
 
 export const triggerDailyUpdate = async (req, res) => {
+  console.log("🔥 /update-daily HIT", req.body);
   try {
     const { vendorId, date } = req.body;
 
