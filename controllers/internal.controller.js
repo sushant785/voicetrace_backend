@@ -1,4 +1,5 @@
-import { updateDailyRecord } from "../services/daily.service.js";
+import { ExpenseEvent } from "../models/ExpenseEvent.js";
+import { updateDailyRecord } from "../services/daily.services.js";
 
 export const triggerDailyUpdate = async (req, res) => {
   try {
@@ -22,5 +23,28 @@ export const triggerDailyUpdate = async (req, res) => {
     return res.status(500).json({
       error: "Failed to update DailyRecord"
     });
+  }
+};
+
+export const addExpense = async (req, res) => {
+  try {
+    const { vendorId, amount, type } = req.body;
+
+    const expense = await ExpenseEvent.create({
+      vendorId,
+      amount,
+      type, // e.g. "gas", "raw material"
+      date: new Date(),
+      timestamp: new Date()
+    });
+
+    // 🔥 IMPORTANT: update daily record
+    await updateDailyRecord(vendorId, new Date());
+
+    res.json({ message: "Expense added", expense });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add expense" });
   }
 };

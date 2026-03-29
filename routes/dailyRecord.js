@@ -156,6 +156,9 @@ router.post("/:recordId/items-sold", async (req, res) => {
   }
 });
 
+
+
+
 // Tap-friendly update: adds sold quantity and unit price to an existing item.
 router.patch("/:recordId/items-sold/:item", async (req, res) => {
   try {
@@ -228,5 +231,8 @@ router.delete("/:recordId/items-sold/:item", async (req, res) => {
     return res.status(500).json({ message: "Failed to delete item", error: error.message });
   }
 });
+
+
+
 
 export default router;

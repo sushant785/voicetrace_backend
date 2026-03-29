@@ -5,6 +5,7 @@ import { UdharEvent } from "../models/UdharEvent.js";
 
 export const updateDailyRecord = async (vendorId, date) => {
   const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
   const end = new Date(date);
   end.setHours(23, 59, 59, 999);
 
@@ -35,22 +36,30 @@ export const updateDailyRecord = async (vendorId, date) => {
   }));
 
   // 💸 Expenses
+  // 💸 Expenses
   let totalExpense = 0;
   const expenseMap = {};
 
   expenses.forEach(e => {
-    totalExpense += e.amount || 0;
+    // 1. Calculate the total (the 1050 you see in your summary)
+    totalExpense += Number(e.amount) || 0;
 
-    if (!expenseMap[e.expenseType]) {
-      expenseMap[e.expenseType] = 0;
+    // 2. FIX: Check for both 'expenseType' or 'type' (naming safety)
+    const category = e.expenseType || e.type || "Other"; 
+
+    if (!expenseMap[category]) {
+      expenseMap[category] = 0;
     }
-    expenseMap[e.expenseType] += e.amount;
+    expenseMap[category] += Number(e.amount) || 0;
   });
 
+  // 3. Map to the list
   const expenseList = Object.entries(expenseMap).map(([type, total]) => ({
-    type,
-    total
+    type: String(type), 
+    total: Number(total) 
   }));
+
+  console.log("Calculated Expense List:", expenseList); // Check your terminal!
 
   // 💳 Udhar
   let givenToday = 0;
